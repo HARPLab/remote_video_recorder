@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>remote_video_recorder</name>
+  <version>0.1.0</version>
+  <description>ROS interface for recording videos from ROS controlled by a service
+  </description>
+<maintainer email="rmaronson@cmu.edu">Reuben Aronson</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>image_transport</depend>
+  <depend>cv_bridge</depend>
+  <depend>OpenCV</depend>
+
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+
+</package>
