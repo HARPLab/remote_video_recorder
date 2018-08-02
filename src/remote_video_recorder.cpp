@@ -27,6 +27,7 @@
  *****************************************************************************/
 
 #include <boost/scoped_ptr.hpp>
+#include <boost/filesystem.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/image_encodings.h>
@@ -78,6 +79,13 @@ struct Recorder {
 		if (codec.size() != 4) {
 			ROS_ERROR("The video codec must be a FOURCC identifier (4 chars)");
 			exit(-1);
+		}
+
+		// Create the parent directory of the filename.
+		// Throws boost::
+		boost::filesystem::path p(filename);
+		if (p.has_parent_path()) {
+			boost::filesystem::create_directories(p.parent_path());
 		}
 
 		image_transport::ImageTransport it(nh);
