@@ -23,12 +23,13 @@ find_package(catkin REQUIRED COMPONENTS
 )
 find_package(OpenCV REQUIRED)
 
+catkin_python_setup()
+
 add_service_files(FILES
     RemoteRecord.srv
 )
 
 generate_messages()
-
 
 catkin_package(
   CATKIN_DEPENDS
