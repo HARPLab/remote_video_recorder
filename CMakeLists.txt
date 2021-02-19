@@ -1,11 +1,18 @@
-cmake_minimum_required(VERSION 2.8.7)
+cmake_minimum_required(VERSION 3.1)
 
 project(remote_video_recorder)
 
-# if CMAKE_BUILD_TYPE is not specified, take 'Release' as default
-IF(NOT CMAKE_BUILD_TYPE)
-    SET(CMAKE_BUILD_TYPE Release)
-ENDIF(NOT CMAKE_BUILD_TYPE)
+include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+
+if (COMPILER_SUPPORTS_CXX11)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+elseif (COMPILER_SUPPORTS_CXX0X)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+else ()
+    message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} does not support C++0x or C++11 support. Please use a different C++ compiler.")
+endif()
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -16,8 +23,6 @@ find_package(catkin REQUIRED COMPONENTS
 )
 find_package(OpenCV REQUIRED)
 
-###############################################################################
-# MESSAGES
 add_service_files(FILES
     RemoteRecord.srv
 )
@@ -37,10 +42,9 @@ include_directories(${catkin_INCLUDE_DIRS})
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 add_executable(
-    remote_video_recorder
+    ${PROJECT_NAME}
     src/remote_video_recorder.cpp
 )
-    
 target_link_libraries(
     remote_video_recorder
     ${catkin_LIBRARIES}

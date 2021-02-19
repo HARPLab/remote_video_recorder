@@ -6,7 +6,11 @@ string filename
 int8 fps # default = 15
 string codec # default = "MJPG"
 string encoding # default = "bgr8"
-string topic # default = image
+
+int8 SOURCE_TOPIC = 1
+int8 SOURCE_DEV = 2
+int8 source_type  # SOURCE_TOPIC or SOURCE_DEV
+string source  # topic name or dev name
 ---
 bool ok
 string message

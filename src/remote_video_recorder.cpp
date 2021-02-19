@@ -26,8 +26,11 @@
  *
  *****************************************************************************/
 
-#include <boost/scoped_ptr.hpp>
+#include <fstream>
+#include <memory>
 #include <boost/filesystem.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/thread.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/image_encodings.h>
@@ -40,26 +43,21 @@
 
 #include "remote_video_recorder/RemoteRecord.h"
 
-struct Recorder {
-	cv::VideoWriter outputVideo;
 
-	int g_count;
+struct Recorder {
+private:
+	cv::VideoWriter output_video;
+	std::ofstream output_time;
+
 	ros::Time g_last_wrote_time;
-	std::string encoding;
 	std::string codec;
 	int fps;
 	std::string filename;
-//	double min_depth_range;
-//	double max_depth_range;
-//	bool use_dynamic_range;
-//	int colormap;
-	image_transport::Subscriber sub_image;
 
-	Recorder(ros::NodeHandle & nh, remote_video_recorder::RemoteRecord::Request const & req) :
-			filename(req.filename), fps(req.fps), codec(req.codec), encoding(
-					req.encoding), g_count(0), g_last_wrote_time(ros::Time(0)) {
-		std::string topic_ref = req.topic;
-		// Fill in some defaults
+public:
+	Recorder(remote_video_recorder::RemoteRecord::Request const & req) :
+			filename(req.filename), fps(req.fps), codec(req.codec), 
+			g_last_wrote_time(ros::Time(0)) {
 		if (filename.empty()) {
 			filename = "output.avi";
 		}
@@ -69,78 +67,103 @@ struct Recorder {
 		if (fps == 0) {
 			fps = 15;
 		}
-		if (encoding.empty()) {
-			encoding = "bgr8";
-		}
-		if (topic_ref.empty()) {
-			topic_ref = "/image";
-		}
 
 		if (codec.size() != 4) {
-			ROS_ERROR("The video codec must be a FOURCC identifier (4 chars)");
-			exit(-1);
+			ROS_ERROR_STREAM("Invalid codec [" << codec 
+				<< "]: The video codec must be a FOURCC identifier (4 chars)");
+			throw std::runtime_error("invalid codec");
 		}
 
 		// Create the parent directory of the filename.
-		// Throws boost::
 		boost::filesystem::path p(filename);
 		if (p.has_parent_path()) {
 			boost::filesystem::create_directories(p.parent_path());
 		}
-
-		image_transport::ImageTransport it(nh);
-		std::string topic = nh.resolveName(topic_ref);
-		sub_image = it.subscribe(topic, 1,
-				&Recorder::callback, this);
+		boost::filesystem::path pt = boost::filesystem::path(filename).replace_extension(".ts.txt");
+		if (boost::filesystem::exists(p) || boost::filesystem::exists(pt)) {
+			ROS_ERROR_STREAM("Requested file exists: " << p);
+			throw std::runtime_error("file exists");
+		}
+		this->output_time.open(pt.native());
+		if (!this->output_time.is_open()) {
+			ROS_ERROR_STREAM("Could not open file: " << pt);
+			throw std::runtime_error("failed to create ts file");
+		}
 	}
 
-	void callback(const sensor_msgs::ImageConstPtr& image_msg) {
-		if (!outputVideo.isOpened()) {
-
-			cv::Size size(image_msg->width, image_msg->height);
-
-			outputVideo.open(filename,
+	bool init_video(int const width, int const height) {
+		output_video.open(filename,
 #if CV_MAJOR_VERSION == 3
-					cv::VideoWriter::fourcc(codec.c_str()[0],
+				cv::VideoWriter::fourcc(codec.c_str()[0],
 #else
-							CV_FOURCC(codec.c_str()[0],
+						CV_FOURCC(codec.c_str()[0],
 #endif
-							codec.c_str()[1], codec.c_str()[2],
-							codec.c_str()[3]),
-							fps,
-							size,
-							true);
+						codec.c_str()[1], codec.c_str()[2],
+						codec.c_str()[3]),
+						fps,
+						cv::Size(width, height),
+						true);
 
-			if (!outputVideo.isOpened()) {
-				ROS_ERROR(
-						"Could not create the output video! Check filename and/or support for codec.");
-				sub_image.shutdown();
-			}
-
-			ROS_INFO_STREAM(
-					"Starting to record " << codec << " video at " << size << "@" << fps << "fps.");
-
+		if (!output_video.isOpened()) {
+			ROS_ERROR(
+					"Could not create the output video! Check filename and/or support for codec.");
+			return false;
 		}
+		ROS_INFO_STREAM(
+				"Starting to record " << codec << " video at " << cv::Size(width, height) << "@" << fps << "fps.");
+		return true;
+	}
 
-		if ((image_msg->header.stamp - g_last_wrote_time)
-				< ros::Duration(1. / fps)) {
-			// Skip to get video with correct fps
+	void record_frame(cv::Mat const & frame, ros::Time const & rec_time) {
+		// init if first frame
+		if (this->g_last_wrote_time.is_zero()) {
+			if (!this->init_video(frame.cols, frame.rows)) {
+				throw std::runtime_error("failed to init video");
+			}
+		}
+		if ((rec_time - this->g_last_wrote_time) < ros::Duration(1. / this->fps)) {
 			return;
 		}
 
+		this->g_last_wrote_time = rec_time;
+		this->output_video.write(frame);
+		this->output_time << rec_time.sec << "," << rec_time.nsec << std::endl;
+	}
+};
+
+struct Source {
+protected:
+	Recorder recorder;
+public:
+	Source(remote_video_recorder::RemoteRecord::Request const & req) : recorder(req) {}
+	virtual ~Source() {}
+};
+
+struct TopicSource : public Source {
+private:
+	std::string encoding;
+	ros::NodeHandle nh;
+	image_transport::ImageTransport it;
+	image_transport::Subscriber sub_image;
+
+public:
+	TopicSource(remote_video_recorder::RemoteRecord::Request const & req) :
+			Source(req), encoding(req.encoding), nh(), it(nh) {
+		if (encoding.empty()) {
+			encoding = "bgr8";
+		}
+		std::string topic = nh.resolveName(req.source);
+		sub_image = it.subscribe(topic, 1,
+				&TopicSource::callback, this);
+	}
+	virtual ~TopicSource() {}
+	void callback(const sensor_msgs::ImageConstPtr& image_msg) {
 		try {
 			cv_bridge::CvtColorForDisplayOptions options;
-//			options.do_dynamic_scaling = use_dynamic_range;
-//			options.min_image_value = min_depth_range;
-//			options.max_image_value = max_depth_range;
-//			options.colormap = colormap;
 			const cv::Mat image = cv_bridge::cvtColorForDisplay(
 					cv_bridge::toCvShare(image_msg), encoding, options)->image;
 			if (!image.empty()) {
-				outputVideo << image;
-				ROS_INFO_STREAM("Recording frame " << g_count << "\x1b[1F");
-				g_count++;
-				g_last_wrote_time = image_msg->header.stamp;
+				this->recorder.record_frame(image, image_msg->header.stamp);
 			} else {
 				ROS_WARN("Frame skipped, no data!");
 			}
@@ -150,20 +173,67 @@ struct Recorder {
 			return;
 		}
 	}
-
-
 };
 
+struct DevSource : public Source {
+private:
+	boost::thread thread;
+	cv::VideoCapture video_source;
+	bool is_running;
+
+public:
+	DevSource(remote_video_recorder::RemoteRecord::Request const & req) :
+			Source(req), is_running(true) {
+		video_source.open(boost::lexical_cast<int>(req.source));
+		if (!video_source.isOpened()) {
+			ROS_ERROR_STREAM("Failed to open device: " << req.source);
+			throw std::runtime_error("failed to open device");
+		}
+		this->thread = boost::thread(&DevSource::run, this);
+	}
+	
+	virtual ~DevSource() {
+		this->is_running = false;
+		this->thread.join();
+	}
+
+	void run() {
+		while (this->is_running) {
+			// boost::thread::interruption_point(); // allow for external cancel
+			this->video_source.grab();
+			ros::Time cap_time = ros::Time::now();
+			cv::Mat frame;
+			bool ok = this->video_source.retrieve(frame);
+			if (!ok) {
+				ROS_WARN("Grabbed frame but no retrieval");
+			} else {
+				this->recorder.record_frame(frame, cap_time);
+			}
+		}
+	}
+};
+
+std::unique_ptr<Source> create_source(remote_video_recorder::RemoteRecord::Request const & req) {
+	switch (req.source_type) {
+		case remote_video_recorder::RemoteRecord::Request::SOURCE_TOPIC:
+			return std::unique_ptr<Source>(new TopicSource(req));
+		case remote_video_recorder::RemoteRecord::Request::SOURCE_DEV:
+			return std::unique_ptr<Source>(new DevSource(req));
+		default:
+			ROS_ERROR_STREAM("Unknown source type: " << req.source_type);
+			throw std::runtime_error("unknown source");
+	}
+}
+
 struct RecorderNode {
-	RecorderNode() : nh() {}
-	void start() {
+	RecorderNode() : nh() {
 		service = nh.advertiseService("control", &RecorderNode::callback, this);
 	}
 
 	bool callback(remote_video_recorder::RemoteRecord::Request & req, remote_video_recorder::RemoteRecord::Response & rep) {
 		std::string msg;
-		if (recorder) {
-			recorder.reset();
+		if (source) {
+			source.reset();
 			ROS_INFO("Stopped previous recording.");
 			if (req.command == remote_video_recorder::RemoteRecord::Request::STOP) {
 				rep.ok = true;
@@ -177,10 +247,8 @@ struct RecorderNode {
 		}
 
 		try {
-			recorder.reset(new Recorder(nh, req));
+			source = create_source(req);
 			rep.ok = true;
-			rep.message = "Recording to " + recorder->filename;
-			ROS_INFO_STREAM("Recording to " << recorder->filename);
 			return true;
 		} catch (std::runtime_error & err) {
 			rep.ok = false;
@@ -192,14 +260,12 @@ struct RecorderNode {
 private:
 	ros::NodeHandle nh;
 	ros::ServiceServer service;
-	boost::scoped_ptr<Recorder> recorder;
+	std::unique_ptr<Source> source;
 };
 
 int main(int argc, char** argv) {
 	ros::init(argc, argv, "remote_video_recorder");
 	RecorderNode node;
-	node.start();
-	ROS_INFO("Started remote video recorder.");
 	ros::spin();
 }
 
