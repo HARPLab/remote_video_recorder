@@ -59,9 +59,9 @@ _SOURCE_TYPES = collections.OrderedDict((
     ('Device', RemoteRecordRequest.SOURCE_DEV)
 ))
 
-class RemoteRecorderConfigFrame(tk.LabelFrame, object):
+class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
     def __init__(self, parent, initial_config):
-        super(RemoteRecorderConfigFrame, self).__init__(parent, text='Remote Video Recorder')
+        super(RemoteWebcamRecorderConfigFrame, self).__init__(parent, text='Remote Video Recorder')
         initial_config = initial_config.get(REMOTE_VIDEO_RECORDER_CONFIG_NAME, {})
 
         self.enabled_var = tk.BooleanVar(value=AVAILABLE and initial_config.get('enabled', False))
