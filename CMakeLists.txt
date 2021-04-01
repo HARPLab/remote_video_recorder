@@ -51,3 +51,7 @@ target_link_libraries(
     ${catkin_LIBRARIES}
     ${OpenCV_LIBRARIES}
 )
+
+add_dependencies(${PROJECT_NAME} 
+    ${catkin_EXPORTED_TARGETS}
+)
