@@ -129,7 +129,10 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self._source_entry.configure(state=state)
                 
 def get_remote_video_recorder(log_dir, config):
-    if REMOTE_VIDEO_RECORDER_CONFIG_NAME in config and config[REMOTE_VIDEO_RECORDER_CONFIG_NAME]['enabled']:
+    if (REMOTE_VIDEO_RECORDER_CONFIG_NAME in config and 
+        config[REMOTE_VIDEO_RECORDER_CONFIG_NAME]['enabled'] and
+        log_dir is not None):
+        
         cfg = config[REMOTE_VIDEO_RECORDER_CONFIG_NAME]
         return RemoteRecorder(cfg['control_topic'],
             filename=os.path.join(os.path.basename(log_dir), 'user_video.mp4'), 
