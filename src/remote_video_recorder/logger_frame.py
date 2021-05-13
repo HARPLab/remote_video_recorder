@@ -95,6 +95,12 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self._source_label.grid(row=4, column=0, sticky='nw')
         self._source_entry.grid(row=4, column=1, sticky='new')
 
+        self._prefix_var = tk.StringVar(value=initial_config.get('prefix', ''))
+        self._prefix_entry = tk.Entry(self, textvariable=self._prefix_var)
+        self._prefix_label = tk.Label(self, text='File prefix:')
+        self._prefix_label.grid(row=5, column=0, sticky='nw')
+        self._prefix_entry.grid(row=5, column=1, sticky='new')
+
 
         self.columnconfigure(1, weight=1)
         if AVAILABLE:
@@ -108,7 +114,8 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
             'control_topic': self.control_topic_var.get(),
             'fps': float(self._fps_var.get()),
             'source_type': self._type_var.get(),
-            'source': self._source_var.get()
+            'source': self._source_var.get(),
+            'prefix': self._prefix_var.get()
         }}
 
     def set_state(self, state):
@@ -127,6 +134,7 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self._fps_entry.configure(state=state)
         self._type_sel.configure(state=state)
         self._source_entry.configure(state=state)
+        self._prefix_entry.configure(state=state)
                 
 def get_remote_video_recorder(log_dir, config):
     if (REMOTE_VIDEO_RECORDER_CONFIG_NAME in config and 
@@ -135,7 +143,7 @@ def get_remote_video_recorder(log_dir, config):
         
         cfg = config[REMOTE_VIDEO_RECORDER_CONFIG_NAME]
         return RemoteRecorder(cfg['control_topic'],
-            filename=os.path.join(os.path.basename(log_dir), 'user_video.mp4'), 
+            filename=os.path.join(cfg.get('prefix', ''), os.path.basename(log_dir), 'user_video.mp4'), 
             fps=cfg['fps'],
             source_type=_SOURCE_TYPES[cfg['source_type']],
             source=cfg['source']
