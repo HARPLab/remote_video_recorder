@@ -135,6 +135,9 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self._type_sel.configure(state=state)
         self._source_entry.configure(state=state)
         self._prefix_entry.configure(state=state)
+
+    def get_logger_name(self):
+        return REMOTE_VIDEO_RECORDER_CONFIG_NAME
                 
 def get_remote_video_recorder(log_dir, config):
     if (REMOTE_VIDEO_RECORDER_CONFIG_NAME in config and 
