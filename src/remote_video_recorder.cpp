@@ -93,7 +93,7 @@ public:
 
 	bool init_video(int const width, int const height) {
 		output_video.open(filename,
-#if CV_MAJOR_VERSION == 3
+#if CV_MAJOR_VERSION >= 3
 				cv::VideoWriter::fourcc(codec.c_str()[0],
 #else
 						CV_FOURCC(codec.c_str()[0],
@@ -178,17 +178,19 @@ public:
 struct DevSource : public Source {
 private:
 	boost::thread thread;
-	cv::VideoCapture video_source;
+	std::unique_ptr<cv::VideoCapture> video_source;
 	bool is_running;
 
 public:
 	DevSource(remote_video_recorder::RemoteRecord::Request const & req) :
-			Source(req), is_running(true) {
-		video_source.open(boost::lexical_cast<int>(req.source));
-		if (!video_source.isOpened()) {
+			Source(req), is_running(true)  {
+
+		video_source.reset(new cv::VideoCapture(boost::lexical_cast<int>(req.source)));
+		if (!video_source->isOpened()) {
 			ROS_ERROR_STREAM("Failed to open device: " << req.source);
 			throw std::runtime_error("failed to open device");
 		}
+
 		this->thread = boost::thread(&DevSource::run, this);
 	}
 	
@@ -200,14 +202,20 @@ public:
 	void run() {
 		while (this->is_running) {
 			// boost::thread::interruption_point(); // allow for external cancel
-			this->video_source.grab();
-			ros::Time cap_time = ros::Time::now();
+			// ROS_INFO_STREAM("Waiting for grab...");
+			// this->video_source.grab();
+			// ROS_INFO_STREAM("Grabbed");
 			cv::Mat frame;
-			bool ok = this->video_source.retrieve(frame);
+			// ROS_INFO_STREAM("reading...");
+			bool ok = this->video_source->read(frame);
+			ros::Time cap_time = ros::Time::now();
+			// ROS_INFO_STREAM("read");
 			if (!ok) {
 				ROS_WARN("Grabbed frame but no retrieval");
 			} else {
+				// ROS_INFO_STREAM("recording...");
 				this->recorder.record_frame(frame, cap_time);
+				// ROS_INFO_STREAM("recorded...");
 			}
 		}
 	}
@@ -222,12 +230,13 @@ std::unique_ptr<Source> create_source(remote_video_recorder::RemoteRecord::Reque
 		default:
 			ROS_ERROR_STREAM("Unknown source type: " << req.source_type);
 			throw std::runtime_error("unknown source");
-	}
+	} 
 }
 
 struct RecorderNode {
-	RecorderNode() : nh() {
+	RecorderNode() : nh("~") {
 		service = nh.advertiseService("control", &RecorderNode::callback, this);
+		ROS_INFO("Ready to receive data.");
 	}
 
 	bool callback(remote_video_recorder::RemoteRecord::Request & req, remote_video_recorder::RemoteRecord::Response & rep) {
@@ -247,6 +256,7 @@ struct RecorderNode {
 		}
 
 		try {
+			ROS_INFO_STREAM("Got request: " << req);
 			source = create_source(req);
 			rep.ok = true;
 			return true;

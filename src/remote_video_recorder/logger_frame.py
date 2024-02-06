@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import collections
-import logging
 import os
 import rospy
 
@@ -16,8 +15,6 @@ try:
 except ImportError:
     AVAILABLE = False
 
-logger = logging.getLogger('remote_video_recorder')
-
 REMOTE_VIDEO_RECORDER_CONFIG_NAME = 'remote_video_recorder'
 
 class RemoteRecorder:
@@ -28,7 +25,7 @@ class RemoteRecorder:
         try:
             rospy.wait_for_service(control_topic, timeout=1.)
         except Exception as ex:
-            logger.warn('Failed to connect to remote video recorder: {}'.format(ex))
+            rospy.logwarn('Failed to connect to remote video recorder: {}'.format(ex))
             self.service = None
         else:
             self.service = rospy.ServiceProxy(control_topic, RemoteRecord)
@@ -36,23 +33,23 @@ class RemoteRecorder:
          
     def start(self):
         if self.service is not None:
-            logger.info('Starting remote video recorder with info {}'.format(self._req))
+            rospy.loginfo('Starting remote video recorder with info {}'.format(self._req))
             try:
                 self._req.command = RemoteRecordRequest.START
                 res = self.service(self._req)
                 if not res.ok:
-                    logger.warn('Failed to start remote video recorder: {}'.format(res.message))
+                    rospy.logwarn('Failed to start remote video recorder: {}'.format(res.message))
             except Exception as ex:
-                logger.warn('Exception when starting remote video recorder: {}'.format(str(e)))
+                rospy.logwarn('Exception when starting remote video recorder: {}'.format(str(ex)))
 
     def stop(self):
         if self.service is not None:
             try:
                 res = self.service(command=RemoteRecordRequest.STOP)
                 if not res.ok:
-                    logger.warn('Failed to stop remote video recorder: {}'.format(res.message))
+                    rospy.logwarn('Failed to stop remote video recorder: {}'.format(res.message))
             except Exception as ex:
-                logger.warn('Exception when stopping remote video recorder: {}'.format(str(e)))
+                rospy.logwarn('Exception when stopping remote video recorder: {}'.format(str(e)))
 
 _SOURCE_TYPES = collections.OrderedDict((
     ('Topic', RemoteRecordRequest.SOURCE_TOPIC),
@@ -71,7 +68,7 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self.enabled_checkbox.grid(row=0, column=0, columnspan=2, sticky='nw')
 
 
-        self.control_topic_var = tk.StringVar(value=initial_config.get('control_topic', '/remote_video_recorder/command'))
+        self.control_topic_var = tk.StringVar(value=initial_config.get('control_topic', '/remote_video_recorder/control'))
         self.control_topic_entry = tk.Entry(self, textvariable=self.control_topic_var)
         self.control_topic_label = tk.Label(self, text='Control topic:')
         self.control_topic_label.grid(row=1, column=0, sticky='nw')
@@ -83,7 +80,7 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         self._fps_label.grid(row=2, column=0, sticky='nw')
         self._fps_entry.grid(row=2, column=1, sticky='new')
 
-        self._type_var = tk.StringVar(value=initial_config.get('source_type', _SOURCE_TYPES.keys()[0]))
+        self._type_var = tk.StringVar(value=initial_config.get('source_type', list(_SOURCE_TYPES.keys())[0]))
         self._type_sel = tk.OptionMenu(self, self._type_var, *_SOURCE_TYPES.keys())
         self._type_label = tk.Label(self, text='Source type:')
         self._type_label.grid(row=3, column=0, sticky='nw')
@@ -112,7 +109,7 @@ class RemoteWebcamRecorderConfigFrame(tk.LabelFrame, object):
         return { REMOTE_VIDEO_RECORDER_CONFIG_NAME: {
             'enabled': self.enabled_var.get(),
             'control_topic': self.control_topic_var.get(),
-            'fps': float(self._fps_var.get()),
+            'fps': int(self._fps_var.get()),
             'source_type': self._type_var.get(),
             'source': self._source_var.get(),
             'prefix': self._prefix_var.get()
@@ -145,8 +142,13 @@ def get_remote_video_recorder(log_dir, config):
         log_dir is not None):
         
         cfg = config[REMOTE_VIDEO_RECORDER_CONFIG_NAME]
+        if "prefix" in cfg and cfg["prefix"] != "":
+            filename = os.path.join(cfg['prefix'], os.path.basename(log_dir), 'user_video.mp4')
+        else:
+            filename = os.path.join(log_dir, 'user_video.mp4')
+
         return RemoteRecorder(cfg['control_topic'],
-            filename=os.path.join(cfg.get('prefix', ''), os.path.basename(log_dir), 'user_video.mp4'), 
+            filename=filename, 
             fps=cfg['fps'],
             source_type=_SOURCE_TYPES[cfg['source_type']],
             source=cfg['source']
